@@ -4,7 +4,7 @@ create table beatmapsets (
   artist text not null,
   title text not null,
   creator text not null,
-  creator_id int not null,
+  creator_id int not null
 );
 
 create table beatmaps (
