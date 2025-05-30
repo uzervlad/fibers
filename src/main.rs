@@ -33,6 +33,7 @@ async fn main() -> Result<()> {
     .route("/api/v2/notifications", get(notifications))
     .route("/api/v2/friends", get(friends))
     .route("/api/v2/chat/ack", post(chat_ack))
+    //.router("/api/v2/beatmaps/")
     .route("/notifications", get(notifications_upgrade))
     .fallback(fallback_handler)
     .with_state(state);

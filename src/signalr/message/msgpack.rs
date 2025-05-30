@@ -48,7 +48,7 @@ pub fn deserialize_message(buf: &[u8]) -> Result<Message> {
     return Err(anyhow!("fuck"))
   };
 
-  println!("{:?} - {:?}", ty, data);
+  //println!("Deser message: {:?} - {:?}", ty, data);
 
   Ok(match ty.as_u64().unwrap() {
     1 => {

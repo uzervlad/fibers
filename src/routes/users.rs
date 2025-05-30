@@ -1,5 +1,7 @@
-use axum::{extract::{Path, State}, middleware, routing::get, Extension, Json, Router};
-use serde::Serialize;
+use axum::{body::Bytes, extract::{Multipart, Path, State}, middleware, routing::{get, post, put}, Extension, Form, Json, Router};
+use axum_typed_multipart::{TryFromMultipart, TypedMultipart};
+use serde::{Deserialize, Serialize, Serializer};
+use serde_json::json;
 use sqlx::prelude::FromRow;
 
 use crate::{auth::{self, User}, state::FiberState};
@@ -184,14 +186,14 @@ async fn get_user(
   //   .await
   //   .unwrap();
 
-  // let stats = sqlx::query_as::<_, DbStatistics>(r#"
-  //   select * from statistics
-  //   where user_id = ?
-  // "#)
-  //   .bind(id)
-  //   .fetch_all(&state.pool)
-  //   .await
-  //   .unwrap();
+   let stats = sqlx::query_as::<_, DbStatistics>(r#"
+     select * from statistics
+     where user_id = ?
+   "#)
+     .bind(id)
+     .fetch_all(&state.pool)
+     .await
+     .unwrap();
 
   let stats = StatisticsRulesets {    
     osu: Statistics::new(&stats.iter().find(|s| s.ruleset_id == 0)
@@ -214,9 +216,112 @@ async fn get_user(
   Json(response)
 }
 
+
+// HACK: Hacky as hell, will leave for now, maybe make it more
+// generalized in the near future or think how to handle
+// it bit better
+fn serialize_option_as_zero<S>(value: &Option<u32>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match value {
+        Some(v) => serializer.serialize_u32(*v),
+        None => serializer.serialize_u32(0),
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct SoloScoresSubmitStatistic {
+    #[serde(serialize_with = "serialize_option_as_zero")]
+    perfect: Option<u32>,
+
+    #[serde(serialize_with = "serialize_option_as_zero")]
+    great: Option<u32>,
+
+    #[serde(serialize_with = "serialize_option_as_zero")]
+    ok: Option<u32>,
+
+    #[serde(serialize_with = "serialize_option_as_zero")]
+    meh: Option<u32>,
+
+    #[serde(serialize_with = "serialize_option_as_zero")]
+    miss: Option<u32>,
+
+    #[serde(serialize_with = "serialize_option_as_zero")]
+    large_tick_miss: Option<u32>,
+
+    #[serde(serialize_with = "serialize_option_as_zero")]
+    large_tick_hit: Option<u32>,
+
+    #[serde(serialize_with = "serialize_option_as_zero")]
+    ignore_miss: Option<u32>,
+
+    #[serde(serialize_with = "serialize_option_as_zero")]
+    ignore_hit: Option<u32>,
+
+    #[serde(serialize_with = "serialize_option_as_zero")]
+    slider_tail_hit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct SoloScoresSubmit {
+    ruleset_id: u8,
+    passed: bool,
+    total_score: u64,
+    total_score_without_mods: u64,
+    accuracy: f32,
+    max_combo: u32,
+    rank: String,
+    ranked: bool,
+    statistics: SoloScoresSubmitStatistic,
+    maximum_statistics: SoloScoresSubmitStatistic,
+
+    online_id: Option<u64>,
+}
+
+async fn put_solo_scores(
+    State(state): State<FiberState>,
+    Path((beatmap_id, token)): Path<(i64, i64)>,
+    body: Bytes,
+) -> Json<SoloScoresSubmit> {
+    println!("+++++++++++++PUT SUBMIT SCORE");
+
+    let mut payload: SoloScoresSubmit = serde_json::from_slice(&body).unwrap();
+
+    payload.online_id = Some(12);
+
+
+    let s = serde_json::to_string(&payload);
+
+    Json(payload)
+}
+
+#[derive(Debug, TryFromMultipart)]
+struct SoloScoresTokenSubmit {
+    version_hash: String,
+    beatmap_hash: String,
+    ruleset_id: i32
+}
+
+/// Assign a token for the score submission
+async fn post_solo_scores(
+  State(state): State<FiberState>,
+  Path(beatmap_id): Path<i64>,
+  multipart: TypedMultipart<SoloScoresTokenSubmit>,
+) -> Json<serde_json::Value> {
+    println!("=============== SCORE SUMBIT REQUEST for {beatmap_id}");
+    println!("================= {:?}", &multipart);
+
+    Json(json!{{
+        "id": 1337
+    }})
+}
+
 pub fn router(state: FiberState) -> Router<FiberState> {
   Router::new()
     .route("/api/v2/me/", get(me))
     .route("/api/v2/users/{id}/", get(get_user))
+    .route("/api/v2/beatmaps/{beatmap_id}/solo/scores", post(post_solo_scores))
+    .route("/api/v2/beatmaps/{beatmap_id}/solo/scores/{token}", put(put_solo_scores))
     .layer(middleware::from_fn_with_state(state, auth::middleware))
 }
