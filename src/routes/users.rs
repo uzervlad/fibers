@@ -276,7 +276,17 @@ struct SoloScoresSubmit {
     statistics: SoloScoresSubmitStatistic,
     maximum_statistics: SoloScoresSubmitStatistic,
 
-    online_id: Option<u64>,
+    // When submitting scores those are 
+    // two parameters that are filled
+    // after score was successfully submitted/processed by the server
+    id: Option<i64>,
+    // position: Option<i64>
+}
+
+#[derive(sqlx::FromRow)]
+struct ScoreDb {
+    online_id: i64,
+    data_json: Vec<u8>,
 }
 
 async fn put_solo_scores(
@@ -284,16 +294,43 @@ async fn put_solo_scores(
     Path((beatmap_id, token)): Path<(i64, i64)>,
     body: Bytes,
 ) -> Json<SoloScoresSubmit> {
-    println!("+++++++++++++PUT SUBMIT SCORE");
+    // Check if this score is indeed in flight
+    let lock = state.in_flight_scores.read().await;
 
-    let mut payload: SoloScoresSubmit = serde_json::from_slice(&body).unwrap();
+    if !lock.contains(&token) {
+        // TODO: A case when we got score submission without
+        // any token retrival
+        unimplemented!();
+    }
+    drop(lock);
 
-    payload.online_id = Some(12);
+    let mut lock = state.in_flight_scores.write().await;
+    lock.remove(&token);
+    drop(lock);
 
+    // Handle storing and returning back to the client
 
-    let s = serde_json::to_string(&payload);
+    // Currently that's a some sort of verifier before inserting to the
+    // database
+    // TODO: Think about make it a bit efficient?
+    let _payload: SoloScoresSubmit = serde_json::from_slice(&body).unwrap();
 
-    Json(payload)
+    let payload_str = str::from_utf8(&body).unwrap();
+    
+    // Insert to retrieve online_id
+    let record = sqlx::query!(
+        "INSERT INTO scores (data_json) VALUES (?1) RETURNING *",
+        payload_str
+    )
+    .fetch_one(&state.pool)
+    .await
+    .unwrap();
+
+    let mut payload_from_db: SoloScoresSubmit = serde_json::from_slice(&record.data_json).unwrap();
+    
+    payload_from_db.id = Some(record.online_id);
+
+    Json(payload_from_db)
 }
 
 #[derive(Debug, TryFromMultipart)]
@@ -304,16 +341,25 @@ struct SoloScoresTokenSubmit {
 }
 
 /// Assign a token for the score submission
-async fn post_solo_scores(
+///
+/// Expected response -> `{ id: long }`
+async fn solo_score_token(
+  Extension(user): Extension<User>,
   State(state): State<FiberState>,
   Path(beatmap_id): Path<i64>,
   multipart: TypedMultipart<SoloScoresTokenSubmit>,
 ) -> Json<serde_json::Value> {
-    println!("=============== SCORE SUMBIT REQUEST for {beatmap_id}");
-    println!("================= {:?}", &multipart);
+    println!("Score token retrival for {}", user.id);
+
+    let token: i64 = rand::random();
+    
+    {
+        let mut lock = state.in_flight_scores.write().await;
+        lock.insert(token);
+    }
 
     Json(json!{{
-        "id": 1337
+        "id": token
     }})
 }
 
@@ -321,7 +367,7 @@ pub fn router(state: FiberState) -> Router<FiberState> {
   Router::new()
     .route("/api/v2/me/", get(me))
     .route("/api/v2/users/{id}/", get(get_user))
-    .route("/api/v2/beatmaps/{beatmap_id}/solo/scores", post(post_solo_scores))
+    .route("/api/v2/beatmaps/{beatmap_id}/solo/scores", post(solo_score_token))
     .route("/api/v2/beatmaps/{beatmap_id}/solo/scores/{token}", put(put_solo_scores))
     .layer(middleware::from_fn_with_state(state, auth::middleware))
 }

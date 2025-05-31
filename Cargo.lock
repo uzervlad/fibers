@@ -556,6 +556,7 @@ dependencies = [
  "axum",
  "axum_typed_multipart",
  "chrono",
+ "rand 0.9.1",
  "rmpv",
  "serde",
  "serde_json",
