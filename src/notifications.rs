@@ -6,7 +6,7 @@ pub async fn notifications_upgrade(ws: WebSocketUpgrade) -> Response<Body> {
 
 async fn notifications_ws(mut ws: WebSocket) {
   while let Some(Ok(msg)) = ws.recv().await {
-    println!("{:?}", msg);
+    println!("Ws notification: {:?}", msg);
     // match msg {
 
     // }

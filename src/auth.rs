@@ -3,7 +3,7 @@ use sqlx::prelude::FromRow;
 
 use crate::state::FiberState;
 
-#[derive(Clone, FromRow)]
+#[derive(Debug, Clone, FromRow)]
 pub struct User {
   pub id: i64,
   pub username: String,

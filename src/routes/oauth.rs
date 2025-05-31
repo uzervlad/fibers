@@ -39,10 +39,10 @@ async fn token(
       expires_in: u32::MAX,
     })),
     Err(e) => {
-      println!("{:?}", e);
+      println!("select users: {:?}", e);
       match sqlx::query_scalar::<_, i64>(r#"
         insert into users (username, joined_at) values
-        (?, date())
+        (?, datetime())
         returning id
       "#)
         .bind(&body.username)
