@@ -15,6 +15,12 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+  tracing_subscriber::fmt()
+    .with_max_level(tracing::Level::INFO)
+    .with_target(false)
+    .with_thread_names(false)
+    .init();
+
   let state = FiberStateInner::new().await?;
   let state = Arc::new(state);
 
@@ -116,11 +122,11 @@ async fn chat_ack() -> Json<ChatAck> {
 async fn fallback_handler(
   req: Request
 ) {
-  println!("[{}] {}", req.method(), req.uri());
-  println!("Headers: {:?}", req.headers());
+  tracing::debug!("[{}] {}", req.method(), req.uri());
+  tracing::debug!("Headers: {:?}", req.headers());
 
   if let Ok(bytes) = req.extract::<Bytes, _>().await {
-    println!("Body: {:?}", bytes);
+    tracing::debug!("Body: {:?}", bytes);
   }
 }
 

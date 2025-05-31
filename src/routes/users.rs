@@ -1,10 +1,14 @@
+use std::{fmt::Display, str::FromStr};
+
 use axum::{body::Bytes, extract::{Multipart, Path, State}, middleware, routing::{get, post, put}, Extension, Form, Json, Router};
 use axum_typed_multipart::{TryFromMultipart, TypedMultipart};
+use chrono::Utc;
+use rosu_mods::{GameMod, GameMods};
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::json;
 use sqlx::prelude::FromRow;
 
-use crate::{auth::{self, User}, state::FiberState};
+use crate::{auth::{self, User}, osu_mods::{OsuModLazer, OsuModsLazer}, state::FiberState};
 
 #[derive(Serialize)]
 pub struct ApiUser {
@@ -230,7 +234,7 @@ where
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct SoloScoresSubmitStatistic {
     #[serde(serialize_with = "serialize_option_as_zero")]
     perfect: Option<u32>,
@@ -272,6 +276,7 @@ struct SoloScoresSubmit {
     accuracy: f32,
     max_combo: u32,
     rank: String,
+    mods: Option<Vec<OsuModLazer>>,
     ranked: bool,
     statistics: SoloScoresSubmitStatistic,
     maximum_statistics: SoloScoresSubmitStatistic,
@@ -290,6 +295,7 @@ struct ScoreDb {
 }
 
 async fn put_solo_scores(
+    Extension(user): Extension<User>,
     State(state): State<FiberState>,
     Path((beatmap_id, token)): Path<(i64, i64)>,
     body: Bytes,
@@ -315,12 +321,14 @@ async fn put_solo_scores(
     // TODO: Think about make it a bit efficient?
     let _payload: SoloScoresSubmit = serde_json::from_slice(&body).unwrap();
 
+    println!("{:?}", &body);
+
     let payload_str = str::from_utf8(&body).unwrap();
     
     // Insert to retrieve online_id
     let record = sqlx::query!(
-        "INSERT INTO scores (data_json) VALUES (?1) RETURNING *",
-        payload_str
+        "INSERT INTO scores (data_json, beatmap_id, user_id) VALUES (?1, ?2, ?3) RETURNING *",
+        payload_str, beatmap_id, user.id
     )
     .fetch_one(&state.pool)
     .await
@@ -329,6 +337,8 @@ async fn put_solo_scores(
     let mut payload_from_db: SoloScoresSubmit = serde_json::from_slice(&record.data_json).unwrap();
     
     payload_from_db.id = Some(record.online_id);
+
+    tracing::info!(user = user.id, bid = beatmap_id, "Submitted score!");
 
     Json(payload_from_db)
 }
@@ -347,9 +357,9 @@ async fn solo_score_token(
   Extension(user): Extension<User>,
   State(state): State<FiberState>,
   Path(beatmap_id): Path<i64>,
-  multipart: TypedMultipart<SoloScoresTokenSubmit>,
+  _multipart: TypedMultipart<SoloScoresTokenSubmit>,
 ) -> Json<serde_json::Value> {
-    println!("Score token retrival for {}", user.id);
+    tracing::info!(user = user.id, "Received score token retrival");
 
     let token: i64 = rand::random();
     
@@ -363,11 +373,106 @@ async fn solo_score_token(
     }})
 }
 
+// TODO: Did this structure cuz i'm lazy and wanna test it ASAP
+// make it more reusable somewhere in the future
+#[derive(Debug, Serialize)]
+pub struct LeadboardScoreUser {
+    id: i64,
+    username: String,
+    country_code: String,
+    avatar_url: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LeaderboardScoreEntry {
+    /// Online score id
+    id: i64,
+    user_id: i64,
+    max_combo: u32,
+    rank: String,
+    pp: f32,
+    replay: bool,
+    created_at: chrono::DateTime<chrono::Utc>,
+    mode: String,
+    //mode_int: String,
+    mods: Vec<OsuModLazer>, // Should never be NULL json
+    statistics: SoloScoresSubmitStatistic,
+    user: LeadboardScoreUser,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LeaderboardScoreResponse {
+    scores: Vec<LeaderboardScoreEntry>,
+
+    // TODO: Self score of the user
+    //user_score: Option<>
+}
+
+async fn get_scores(
+    Extension(user): Extension<User>,
+    State(state): State<FiberState>,
+    Path(beatmap_id): Path<i64>,
+) -> Json<LeaderboardScoreResponse> {
+    tracing::info!(user = user.id, bid = beatmap_id, "Leaderboard scores request");
+
+    // TODO Whole handler is ugly AF i know...
+
+    let mut scores = Vec::new();
+
+    let records = sqlx::query!(
+        "SELECT * FROM scores WHERE user_id = ?1 AND beatmap_id = ?2",
+        user.id, beatmap_id
+    )
+    .fetch_all(&state.pool)
+    .await
+    .unwrap();
+
+    for record in records {
+        let score_json: SoloScoresSubmit = serde_json::from_slice(&record.data_json).unwrap();
+        let user = sqlx::query!("SELECT * FROM users WHERE id = ?1", record.user_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+
+        let score = LeaderboardScoreEntry {
+            id: record.online_id,
+            user_id: record.user_id,
+            max_combo: score_json.max_combo,
+            rank: score_json.rank.clone(),
+            pp: 727.0,
+            replay: false,
+            created_at: Utc::now(),
+            mode: "osu".to_owned(),
+            mods: score_json.mods.clone().unwrap_or(Vec::new()),
+            statistics: score_json.statistics.clone(),
+            user: LeadboardScoreUser {
+                id: user.id,
+                username: user.username.clone(),
+                country_code: "JP".to_owned(),
+                avatar_url: "https://f.octo.moe/files/ddd854e741d78037.png".to_owned(),
+            },
+        };
+
+        scores.push(score);
+    }
+
+    let res = LeaderboardScoreResponse { scores };
+
+    let db = serde_json::to_string(&res);
+
+    dbg!(&db);
+
+    //todo!()
+
+    Json(res)
+}
+
 pub fn router(state: FiberState) -> Router<FiberState> {
   Router::new()
     .route("/api/v2/me/", get(me))
     .route("/api/v2/users/{id}/", get(get_user))
     .route("/api/v2/beatmaps/{beatmap_id}/solo/scores", post(solo_score_token))
     .route("/api/v2/beatmaps/{beatmap_id}/solo/scores/{token}", put(put_solo_scores))
+    .route("/api/v2/beatmaps/{beatmap_id}/scores", get(get_scores))
     .layer(middleware::from_fn_with_state(state, auth::middleware))
 }
