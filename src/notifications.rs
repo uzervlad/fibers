@@ -1,4 +1,8 @@
-use axum::{body::Body, extract::{ws::WebSocket, WebSocketUpgrade}, response::Response};
+use axum::{
+  body::Body,
+  extract::{WebSocketUpgrade, ws::WebSocket},
+  response::Response,
+};
 
 pub async fn notifications_upgrade(ws: WebSocketUpgrade) -> Response<Body> {
   ws.on_upgrade(notifications_ws)

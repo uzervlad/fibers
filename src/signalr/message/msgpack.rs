@@ -1,6 +1,6 @@
 use std::{error::Error, fmt::Display};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use rmpv::Value;
 
 use super::{InvocationMessage, Message};
@@ -21,7 +21,7 @@ impl Error for MsgpackParseError {}
 // TODO: rename this
 pub fn parse_message_with_length(buf: &[u8]) -> &[u8] {
   let mut length = 0;
-  
+
   for i in 0..5 {
     let byte = buf[i];
 
@@ -45,7 +45,7 @@ pub fn deserialize_message(buf: &[u8]) -> Result<Message> {
   };
 
   let Value::Integer(ty) = data.remove(0) else {
-    return Err(anyhow!("fuck"))
+    return Err(anyhow!("fuck"));
   };
 
   //println!("Deser message: {:?} - {:?}", ty, data);
@@ -58,24 +58,24 @@ pub fn deserialize_message(buf: &[u8]) -> Result<Message> {
         invocation_id: match data.remove(0) {
           Value::Nil => None,
           Value::String(s) => Some(s.to_string()),
-          _ => return Err(MsgpackParseError::InvalidType.into())
+          _ => return Err(MsgpackParseError::InvalidType.into()),
         },
-        target: data.remove(0)
+        target: data
+          .remove(0)
           .as_str()
           .ok_or_else(|| MsgpackParseError::InvalidType)?
           .into(),
-        arguments: data.remove(0)
+        arguments: data
+          .remove(0)
           .as_array()
           .ok_or_else(|| MsgpackParseError::InvalidType)?
           .iter()
           .map(|v| v.into())
-          .collect()
+          .collect(),
       })
-    },
-    6 => {
-      Message::Ping
     }
-    _ => return Err(anyhow!("fuck"))
+    6 => Message::Ping,
+    _ => return Err(anyhow!("fuck")),
   })
 }
 
@@ -115,16 +115,12 @@ pub fn serialize_message(message: &Message) -> Result<Vec<u8>> {
           1 => completion.error.clone().unwrap().into(),
           2 => Value::Nil,
           3 => completion.result.as_ref().unwrap().into(),
-          _ => unreachable!()
-        }
-      ])
-    },
-    Message::Ping => {
-      Value::Array(vec![
-        Value::from(6)
+          _ => unreachable!(),
+        },
       ])
     }
-    _ => todo!()
+    Message::Ping => Value::Array(vec![Value::from(6)]),
+    _ => todo!(),
   };
 
   rmpv::encode::write_value(&mut buf, &value)?;

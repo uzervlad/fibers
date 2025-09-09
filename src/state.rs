@@ -19,8 +19,8 @@ pub struct FiberStateInner {
 impl FiberStateInner {
   pub async fn new() -> Result<Self> {
     Ok(Self {
-        pool: SqlitePool::connect("sqlite:fibers.db").await?,
-        in_flight_scores: Default::default(),
+      pool: SqlitePool::connect("sqlite:fibers.db").await?,
+      in_flight_scores: Default::default(),
     })
   }
 }

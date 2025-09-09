@@ -1,8 +1,20 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use axum::{body::Bytes, extract::{Request, State}, routing::{get, post}, Json, RequestExt, Router};
-use fibers::{auth::User, notifications::notifications_upgrade, routes::{self, users::ApiUser}, state::{FiberState, FiberStateInner}};
+use axum::{
+  Json,
+  RequestExt,
+  Router,
+  body::Bytes,
+  extract::{Request, State},
+  routing::{get, post},
+};
+use fibers::{
+  auth::User,
+  notifications::notifications_upgrade,
+  routes::{self, users::ApiUser},
+  state::{FiberState, FiberStateInner},
+};
 use serde::Serialize;
 use sqlx::migrate;
 use tokio::net::TcpListener;
@@ -24,9 +36,7 @@ async fn main() -> Result<()> {
   let state = FiberStateInner::new().await?;
   let state = Arc::new(state);
 
-  migrate!()
-    .run(&state.pool)
-    .await?;
+  migrate!().run(&state.pool).await?;
 
   let listener = TcpListener::bind("0.0.0.0:19991").await?;
 
@@ -90,24 +100,20 @@ struct Relation {
   user: ApiUser,
 }
 
-async fn friends(
-  State(state): State<FiberState>,
-) -> Json<Vec<Relation>> {
+async fn friends(State(state): State<FiberState>) -> Json<Vec<Relation>> {
   let Ok(bot) = sqlx::query_as::<_, User>("select * from users where id = 1")
     .fetch_one(&state.pool)
-    .await else
-  {
+    .await
+  else {
     unreachable!("probably");
   };
 
-  Json(vec![
-    Relation {
-      target_id: 1,
-      relation_type: 0,
-      mutual: true,
-      user: ApiUser::new(&bot)
-    }
-  ])
+  Json(vec![Relation {
+    target_id: 1,
+    relation_type: 0,
+    mutual: true,
+    user: ApiUser::new(&bot),
+  }])
 }
 
 #[derive(Default, Serialize)]
@@ -119,9 +125,7 @@ async fn chat_ack() -> Json<ChatAck> {
   Json(ChatAck::default())
 }
 
-async fn fallback_handler(
-  req: Request
-) {
+async fn fallback_handler(req: Request) {
   tracing::debug!("[{}] {}", req.method(), req.uri());
   tracing::debug!("Headers: {:?}", req.headers());
 
@@ -129,4 +133,3 @@ async fn fallback_handler(
     tracing::debug!("Body: {:?}", bytes);
   }
 }
-

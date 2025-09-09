@@ -1,8 +1,10 @@
 use axum::extract::ws::{self, WebSocket};
 
-use crate::signalr::{hub::{send_json, SignalRProtocol}, message::{CompletionMessage, Message}};
-
 use super::initiate;
+use crate::signalr::{
+  hub::{SignalRProtocol, send_json},
+  message::{CompletionMessage, Message},
+};
 
 pub async fn handle_metadata_hub(mut socket: WebSocket) {
   let protocol = match initiate(&mut socket).await {
@@ -20,7 +22,7 @@ pub async fn handle_metadata_hub(mut socket: WebSocket) {
     match msg {
       ws::Message::Text(data) => {
         let Ok(msg) = serde_json::from_str::<Message>(&data) else {
-          continue
+          continue;
         };
 
         println!("{:?}", msg);
@@ -40,20 +42,20 @@ pub async fn handle_metadata_hub(mut socket: WebSocket) {
 
               send_json(&mut socket, completion).await;
             }
-          },
+          }
           Message::Ping => {
             println!("[metadata] Ping");
 
             let ping = Message::Ping;
 
             send_json(&mut socket, ping).await;
-          },
-          _ => {},
+          }
+          _ => {}
         }
-      },
+      }
       ws::Message::Close(_frame) => {
         // ok :(
-      },
+      }
       _ => {
         // what.
       }
