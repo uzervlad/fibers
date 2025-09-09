@@ -1,8 +1,10 @@
 use axum::extract::ws::{self, WebSocket};
 
-use crate::signalr::{hub::send_msgpack, message::{msgpack::deserialize_message, CompletionMessage, Message}};
-
-use super::{initiate, SignalRProtocol};
+use super::{SignalRProtocol, initiate};
+use crate::signalr::{
+  hub::send_msgpack,
+  message::{CompletionMessage, Message, msgpack::deserialize_message},
+};
 
 pub async fn handle_multiplayer_hub(mut socket: WebSocket) {
   let protocol = match initiate(&mut socket).await {
@@ -20,7 +22,7 @@ pub async fn handle_multiplayer_hub(mut socket: WebSocket) {
     match msg {
       ws::Message::Binary(data) => {
         let Ok(msg) = deserialize_message(&data) else {
-          continue
+          continue;
         };
 
         match msg {
@@ -38,20 +40,20 @@ pub async fn handle_multiplayer_hub(mut socket: WebSocket) {
 
               send_msgpack(&mut socket, completion).await;
             }
-          },
+          }
           Message::Ping => {
             println!("[multiplayer] Ping");
 
             let ping = Message::Ping;
 
             send_msgpack(&mut socket, ping).await;
-          },
-          _ => {},
+          }
+          _ => {}
         }
-      },
+      }
       ws::Message::Close(_frame) => {
         // ok :(
-      },
+      }
       _ => {
         // what.
       }

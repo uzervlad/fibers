@@ -1,4 +1,8 @@
-use axum::{body::Body, extract::{ws::WebSocket, WebSocketUpgrade}, response::Response};
+use axum::{
+  body::Body,
+  extract::{WebSocketUpgrade, ws::WebSocket},
+  response::Response,
+};
 
 pub async fn notifications_upgrade(ws: WebSocketUpgrade) -> Response<Body> {
   ws.on_upgrade(notifications_ws)
@@ -6,7 +10,7 @@ pub async fn notifications_upgrade(ws: WebSocketUpgrade) -> Response<Body> {
 
 async fn notifications_ws(mut ws: WebSocket) {
   while let Some(Ok(msg)) = ws.recv().await {
-    println!("{:?}", msg);
+    println!("Ws notification: {:?}", msg);
     // match msg {
 
     // }
